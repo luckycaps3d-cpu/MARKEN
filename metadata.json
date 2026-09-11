@@ -1,0 +1,6 @@
+{
+  "name": "Configurador de Elevador",
+  "description": "Aplicativo para dimensionamento e configuração de elevadores (poço, cabine e arcada), dimensionamento inverso por tamanho de poço com medidas em múltiplos de 50 mm, e planta baixa técnica interativa com geração de PDF ABNT NBR 16858-1.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
