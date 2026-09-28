@@ -3,6 +3,11 @@ import {
   ElevatorConfigState,
   ElevatorCalculationResults,
 } from './elevator-calculator';
+import {
+  CompanySettings,
+  loadCompanySettingsFromStorage,
+  createWatermarkDataUrl,
+} from './company-settings';
 
 export interface GeneratePdfOptions {
   state: ElevatorConfigState;
@@ -10,11 +15,13 @@ export interface GeneratePdfOptions {
   blueprintDataUrl?: string;
   projectName?: string;
   authorName?: string;
+  companySettings?: CompanySettings;
 }
 
 /**
  * Gera e realiza o download do relatório técnico completo em PDF
- * em conformidade com a ABNT NBR 16858-1:2020.
+ * em conformidade com a ABNT NBR 16858-1:2020, incluindo marca d'água
+ * e logotipo da empresa contratante.
  */
 export async function generateElevatorPdf({
   state,
@@ -22,7 +29,10 @@ export async function generateElevatorPdf({
   blueprintDataUrl,
   projectName = 'Dimensionamento Padrão',
   authorName = 'Configurador de Elevadores Web',
+  companySettings,
 }: GeneratePdfOptions): Promise<void> {
+  const company = companySettings || loadCompanySettingsFromStorage();
+
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -45,9 +55,36 @@ export async function generateElevatorPdf({
     minute: '2-digit',
   });
 
+  // Prepara imagem de marca d'água semi-transparente se houver logo
+  let watermarkDataUrl: string | null = null;
+  if (company.enableWatermark && company.logoDataUrl) {
+    try {
+      watermarkDataUrl = await createWatermarkDataUrl(
+        company.logoDataUrl,
+        company.watermarkOpacity || 0.12
+      );
+    } catch (e) {
+      console.warn('Erro ao gerar marca d água do logo:', e);
+      watermarkDataUrl = company.logoDataUrl;
+    }
+  }
+
   // ==========================================
   // PÁGINA 1: MEMORIAL DE CÁLCULO & DADOS
   // ==========================================
+
+  // Marca d'água de fundo na Página 1
+  if (watermarkDataUrl) {
+    const wmW = 135;
+    const wmH = 95;
+    const wmX = (pageWidth - wmW) / 2;
+    const wmY = (pageHeight - wmH) / 2 + 10;
+    try {
+      doc.addImage(watermarkDataUrl, 'PNG', wmX, wmY, wmW, wmH, undefined, 'FAST');
+    } catch (e) {
+      console.warn('Falha ao desenhar marca d água na pág 1:', e);
+    }
+  }
 
   // 1. Cabeçalho Topo
   doc.setFillColor(15, 23, 42); // slate-900
@@ -65,27 +102,50 @@ export async function generateElevatorPdf({
   doc.setTextColor(103, 232, 249); // cyan-300
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(
-    'DIMENSIONAMENTO DE ELEVADOR — ABNT NBR 16858-1:2020 / NM 313',
-    marginX + 6,
-    27
-  );
+  const empresaSub = company.companyName
+    ? `${company.companyName.toUpperCase()} — DIMENSIONAMENTO CONFORME ABNT NBR 16858-1`
+    : 'DIMENSIONAMENTO DE ELEVADOR — ABNT NBR 16858-1:2020 / NM 313';
+  doc.text(empresaSub, marginX + 6, 27);
+
+  // Espaço de texto para data e projeto se não houver logo ou ajustado
+  const hasLogo = Boolean(company.logoDataUrl);
+  const textOffsetRight = hasLogo ? marginX + contentWidth - 48 : marginX + contentWidth - 6;
 
   doc.setTextColor(226, 232, 240);
   doc.setFontSize(7.5);
   doc.text(
     `Emissão: ${dataFormatada} às ${horaFormatada}`,
-    marginX + contentWidth - 6,
+    textOffsetRight,
     21,
     { align: 'right' }
   );
   doc.setTextColor(148, 163, 184);
   doc.text(
     `Projeto: ${projectName}`,
-    marginX + contentWidth - 6,
+    textOffsetRight,
     27,
     { align: 'right' }
   );
+
+  // Se houver logo da empresa, insere no canto superior direito do cabeçalho
+  if (company.logoDataUrl) {
+    try {
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(marginX + contentWidth - 44, 14, 40, 22, 1.5, 1.5, 'F');
+      doc.addImage(
+        company.logoDataUrl,
+        'PNG',
+        marginX + contentWidth - 42.5,
+        15,
+        37,
+        20,
+        undefined,
+        'FAST'
+      );
+    } catch (err) {
+      console.warn('Erro ao inserir logo no cabeçalho:', err);
+    }
+  }
 
   // 2. 4 Cards de Destaque Executivo (KPIs)
   const cardY = 43;
@@ -111,17 +171,19 @@ export async function generateElevatorPdf({
       text: [146, 64, 14],
     },
     {
-      label: 'POÇO (LP × PP)',
+      label: results.isCalculadoPorPoco ? 'POÇO INFORMADO' : 'POÇO (LP × PP)',
       value: `${results.larguraPoco} × ${results.profundidadePoco}`,
-      sub: 'Medidas em milímetros',
+      sub: results.isCalculadoPorPoco
+        ? `Sobra: +${results.sobraLarguraPoco ?? 0}L / +${results.sobraProfundidadePoco ?? 0}P mm`
+        : 'Medidas em milímetros',
       bg: [239, 246, 255], // blue-50
       border: [59, 130, 246], // blue-500
       text: [30, 64, 175],
     },
     {
-      label: 'CABINE ÚTIL',
+      label: results.isCalculadoPorPoco ? 'CABINE CALCULADA' : 'CABINE ÚTIL',
       value: `${state.larguraCabine} × ${state.profundidadeCabine}`,
-      sub: `Área: ${results.areaCabineM2.toFixed(2)} m²`,
+      sub: `Área: ${results.areaCabineM2.toFixed(2)} m² (Múlt. 50)`,
       bg: [240, 253, 250], // cyan-50
       border: [6, 182, 212], // cyan-500
       text: [21, 94, 117],
@@ -312,48 +374,68 @@ export async function generateElevatorPdf({
 
   // 5. Seção 3: Dimensões da Caixa de Corrida (Poço)
   currentY = drawSectionHeader(
-    '3. DIMENSIONAMENTO DA CAIXA DE CORRIDA (POÇO) E FOLGAS',
+    results.isCalculadoPorPoco
+      ? '3. CAIXA DE CORRIDA (POÇO INFORMADO DA OBRA) E SOBRAS DE FOLGA'
+      : '3. DIMENSIONAMENTO DA CAIXA DE CORRIDA (POÇO) E FOLGAS',
     currentY
   );
   currentY = drawRow(
-    'LARGURA DO POÇO (LP) — Medida Mínima Acabada',
-    `${results.larguraPoco} mm`,
+    results.isCalculadoPorPoco
+      ? 'LARGURA DO POÇO (LP) — Medida Informada da Obra'
+      : 'LARGURA DO POÇO (LP) — Medida Mínima Acabada',
+    results.isCalculadoPorPoco
+      ? `${results.larguraPoco} mm (Sobra de folga: +${results.sobraLarguraPoco ?? 0} mm)`
+      : `${results.larguraPoco} mm`,
     currentY,
     false,
     [15, 23, 42],
     true
   );
   currentY = drawRow(
-    'PROFUNDIDADE DO POÇO (PP) — Medida Mínima Acabada',
-    `${results.profundidadePoco} mm`,
+    results.isCalculadoPorPoco
+      ? 'PROFUNDIDADE DO POÇO (PP) — Medida Informada da Obra'
+      : 'PROFUNDIDADE DO POÇO (PP) — Medida Mínima Acabada',
+    results.isCalculadoPorPoco
+      ? `${results.profundidadePoco} mm (Sobra de folga: +${results.sobraProfundidadePoco ?? 0} mm)`
+      : `${results.profundidadePoco} mm`,
     currentY,
     true,
     [15, 23, 42],
     true
   );
+  if (results.isCalculadoPorPoco) {
+    currentY = drawRow(
+      'Poço Mínimo Exigido para a Cabine Calculada',
+      `${results.larguraPocoMinima ?? results.larguraPoco} mm × ${results.profundidadePocoMinima ?? results.profundidadePoco} mm`,
+      currentY,
+      false,
+      [16, 185, 129],
+      true
+    );
+  }
   currentY = drawRow(
     'Folga Frontal (Soleira da Cabine ao Marco do Pavimento)',
     `${results.folgaFrontal} mm`,
     currentY,
-    false
+    results.isCalculadoPorPoco ? true : false
   );
   currentY = drawRow(
     'Folga Necessária para Recolhimento da Porta',
     `${results.folgaPorta} mm`,
     currentY,
-    true
+    results.isCalculadoPorPoco ? false : true
   );
   currentY = drawRow(
     'Espaço Reservado para Chassis e Contrapeso/Pistão',
     `${results.espacoChassis} mm`,
     currentY,
-    false
+    results.isCalculadoPorPoco ? true : false
   );
   currentY = drawRow(
     'Menor Folga Lateral de Segurança',
     `${results.menorFolga} mm`,
     currentY,
-    true
+    results.isCalculadoPorPoco ? false : true
   );
 
   currentY += 4;
@@ -405,17 +487,29 @@ export async function generateElevatorPdf({
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
-  doc.text(
-    'Configurador de Elevadores Web — Projeto derivado do repositório macoraty/elev',
-    marginX,
-    footerY
-  );
+  const footerText = company.companyName
+    ? `${company.companyName} — Memorial Técnico de Cálculo e Dimensionamento de Elevador`
+    : 'Configurador de Elevadores Web — Documento Técnico para Fins de Projeto e Pré-Dimensionamento';
+  doc.text(footerText, marginX, footerY);
   doc.text('Página 1 de 2', marginX + contentWidth, footerY, { align: 'right' });
 
   // ==========================================
   // PÁGINA 2: PLANTA BAIXA TÉCNICA (BLUEPRINT)
   // ==========================================
   doc.addPage('a4', 'portrait');
+
+  // Marca d'água de fundo na Página 2 (planta baixa)
+  if (watermarkDataUrl) {
+    const wmW = 140;
+    const wmH = 100;
+    const wmX = (pageWidth - wmW) / 2;
+    const wmY = 34 + (150 - wmH) / 2; // centralizada sobre a planta técnica
+    try {
+      doc.addImage(watermarkDataUrl, 'PNG', wmX, wmY, wmW, wmH, undefined, 'FAST');
+    } catch (e) {
+      console.warn('Falha ao desenhar marca d água na pág 2:', e);
+    }
+  }
 
   // Cabeçalho da Página 2
   doc.setFillColor(15, 23, 42); // slate-900
@@ -426,7 +520,7 @@ export async function generateElevatorPdf({
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('PLANTA BAIXA TÉCNICA EXECUTIVA (CORTE HORIZONTAL)', marginX + 6, 21);
+  doc.text('PLANTA BAIXA TÉCNICA EXECUTIVA (CORTE HORIZONTAL)', marginX + 6, 20.5);
 
   doc.setTextColor(167, 243, 208); // emerald-200
   doc.setFont('helvetica', 'normal');
@@ -436,6 +530,26 @@ export async function generateElevatorPdf({
     marginX + 6,
     26.5
   );
+
+  // Logo da Empresa no Cabeçalho da Página 2
+  if (company.logoDataUrl) {
+    try {
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(marginX + contentWidth - 36, 13.5, 32, 15, 1, 1, 'F');
+      doc.addImage(
+        company.logoDataUrl,
+        'PNG',
+        marginX + contentWidth - 35,
+        14,
+        30,
+        14,
+        undefined,
+        'FAST'
+      );
+    } catch (err) {
+      console.warn('Erro ao inserir logo cabeçalho pág 2:', err);
+    }
+  }
 
   // Se houver a imagem do blueprint gerada em alta definição pelo Canvas
   const blueprintY = 34;
@@ -534,6 +648,9 @@ export async function generateElevatorPdf({
     '3. Paredes do poço devem suportar as forças normatizadas aplicadas pelos suportes de guia e freio de segurança.',
     '4. Rebaixo do poço (PIT) e última altura superior (Headroom) a serem validados conforme velocidade nominal.',
     '5. Conforme NBR 16858-1, a porta da cabine nunca pode ter vão livre superior à face da cabine.',
+    ...(results.isForaDaNorma
+      ? ['6. AVISO: Cabine sob medida inferior a 800x1200mm (fora do padrão normativo residencial ABNT NBR 16858-1).']
+      : []),
   ];
 
   engineeringNotes.forEach((note, i) => {
@@ -554,49 +671,66 @@ export async function generateElevatorPdf({
   // Divisões do carimbo
   doc.setDrawColor(203, 213, 225);
   doc.setLineWidth(0.2);
-  doc.line(marginX + 60, stampY, marginX + 60, stampY + stampH);
-  doc.line(marginX + 122, stampY, marginX + 122, stampY + stampH);
+  doc.line(marginX + 62, stampY, marginX + 62, stampY + stampH);
+  doc.line(marginX + 124, stampY, marginX + 124, stampY + stampH);
 
-  // Box 1: Projeto
+  // Box 1: Empresa & Projeto
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('PROJETO EXECUTIVO:', marginX + 3, stampY + 5);
+  doc.text(
+    company.companyName ? company.companyName.toUpperCase() : 'EMPRESA / PROJETO EXECUTIVO:',
+    marginX + 3,
+    stampY + 5
+  );
   doc.setFontSize(8);
   doc.setTextColor(15, 23, 42);
-  doc.text('DIMENSIONAMENTO DE POÇO E CABINE', marginX + 3, stampY + 11);
+  const stampProjectTitle = company.subtitle || projectName || 'DIMENSIONAMENTO DE POÇO E CABINE';
+  doc.text(stampProjectTitle.substring(0, 32), marginX + 3, stampY + 11);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Norma: ABNT NBR 16858-1:2020 / NM 313`, marginX + 3, stampY + 16);
-  doc.text(`Autor: ${authorName}`, marginX + 3, stampY + 21);
+  if (company.cnpj) {
+    doc.text(`CNPJ: ${company.cnpj}`, marginX + 3, stampY + 16);
+  } else {
+    doc.text(`Norma: ABNT NBR 16858-1:2020 / NM 313`, marginX + 3, stampY + 16);
+  }
+  doc.text(`Projeto: ${projectName}`, marginX + 3, stampY + 21);
 
   // Box 2: Capacidade e Carga
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('CAPACIDADE E CARGA ÚTIL:', marginX + 63, stampY + 5);
+  doc.text('CAPACIDADE E CARGA ÚTIL:', marginX + 65, stampY + 5);
   doc.setFontSize(8.5);
   doc.setTextColor(16, 185, 129);
-  doc.text(`${results.numeroPassageiros} PASSAGEIROS | ${results.cargaUtilKg} KG`, marginX + 63, stampY + 11);
+  doc.text(`${results.numeroPassageiros} PASSAGEIROS | ${results.cargaUtilKg} KG`, marginX + 65, stampY + 11);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Área de Cabine: ${results.areaCabineM2.toFixed(2)} m² (Permitida: ${results.areaMaxPermitidaM2.toFixed(2)} m²)`, marginX + 63, stampY + 16);
-  doc.text(`Massa de Referência: 75 kg/pass.`, marginX + 63, stampY + 21);
+  doc.text(`Área de Cabine: ${results.areaCabineM2.toFixed(2)} m² (Permitida: ${results.areaMaxPermitidaM2.toFixed(2)} m²)`, marginX + 65, stampY + 16);
+  doc.text(`Massa de Referência: 75 kg/pass.`, marginX + 65, stampY + 21);
 
-  // Box 3: Aprovação e Visto
+  // Box 3: Responsável Técnico / Aprovação
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('RESPONSÁVEL TÉCNICO / CREA:', marginX + 125, stampY + 5);
+  doc.text('RESPONSÁVEL TÉCNICO / CREA-CAU:', marginX + 127, stampY + 5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(company.engineerName || authorName || 'Engenharia de Aplicação', marginX + 127, stampY + 11);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
-  doc.setTextColor(148, 163, 184);
-  doc.text('Assinatura / Visto do Engenheiro:', marginX + 125, stampY + 12);
-  doc.line(marginX + 125, stampY + 19, marginX + contentWidth - 4, stampY + 19);
+  doc.setTextColor(71, 85, 105);
+  doc.text(
+    company.engineerCrea ? `CREA/CAU: ${company.engineerCrea}` : 'Assinatura / Visto do Engenheiro:',
+    marginX + 127,
+    stampY + 16
+  );
+  doc.line(marginX + 127, stampY + 20, marginX + contentWidth - 4, stampY + 20);
   doc.setFontSize(6);
-  doc.text(`Data: ${dataFormatada} - Folha 2 de 2`, marginX + 125, stampY + 23);
+  doc.text(`Data: ${dataFormatada} - Folha 2 de 2`, marginX + 127, stampY + 24);
 
   // Rodapé da Página 2
   doc.setDrawColor(203, 213, 225);
@@ -606,11 +740,7 @@ export async function generateElevatorPdf({
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
-  doc.text(
-    'Configurador de Elevadores Web — Documento Técnico para Fins de Projeto e Pré-Dimensionamento',
-    marginX,
-    footerY
-  );
+  doc.text(footerText, marginX, footerY);
   doc.text('Página 2 de 2', marginX + contentWidth, footerY, { align: 'right' });
 
   // Dispara o download do arquivo PDF

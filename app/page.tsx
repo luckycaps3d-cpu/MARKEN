@@ -5,12 +5,22 @@ import {
   ElevatorConfigState,
   INITIAL_STATE,
   calculateElevator,
+  ShaftConfigState,
+  INITIAL_SHAFT_STATE,
+  calculatePossibleCabinsFromShaft,
+  getMaiorAberturaValida,
 } from '@/lib/elevator-calculator';
 import { generateElevatorPdf } from '@/lib/elevator-pdf';
 import { loadClearancesFromStorage } from '@/lib/clearances-storage';
+import {
+  CompanySettings,
+  DEFAULT_COMPANY_SETTINGS,
+  loadCompanySettingsFromStorage,
+} from '@/lib/company-settings';
 import { ConfigPanel } from '@/components/config-panel';
 import { ResultsPanel } from '@/components/results-panel';
 import { BlueprintCanvas } from '@/components/blueprint-canvas';
+import { SystemSettingsModal } from '@/components/system-settings-modal';
 import {
   Building2,
   Compass,
@@ -22,20 +32,24 @@ import {
   HelpCircle,
   Loader2,
   Database,
+  Sliders,
 } from 'lucide-react';
 
 export default function ElevatorConfiguratorPage() {
-  const [state, setState] = useState<ElevatorConfigState>(INITIAL_STATE);
+  const [cabinState, setCabinState] = useState<ElevatorConfigState>(INITIAL_STATE);
+  const [shaftConfig, setShaftConfig] = useState<ShaftConfigState>(INITIAL_SHAFT_STATE);
   const [mobileTab, setMobileTab] = useState<'config' | 'blueprint'>('config');
   const [configMode, setConfigMode] = useState<'cabine' | 'poco'>('cabine');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSystemSettingsOpen, setIsSystemSettingsOpen] = useState(false);
+  const [companySettings, setCompanySettings] = useState<CompanySettings>(DEFAULT_COMPANY_SETTINGS);
 
   // Carrega as folgas técnicas salvas no navegador pelo usuário ao iniciar o programa
   useEffect(() => {
     const saved = loadClearancesFromStorage();
     if (saved) {
       const timer = setTimeout(() => {
-        setState((prev) => ({
+        setCabinState((prev) => ({
           ...prev,
           ...saved,
         }));
@@ -44,26 +58,140 @@ export default function ElevatorConfiguratorPage() {
     }
   }, []);
 
+  // Carrega as configurações da empresa e logotipo salvas
+  useEffect(() => {
+    const current = loadCompanySettingsFromStorage();
+    if (current) {
+      const timer = setTimeout(() => {
+        setCompanySettings(current);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Escuta atualizações de configurações da empresa disparadas por outros componentes
+  useEffect(() => {
+    const handleUpdate = () => {
+      const current = loadCompanySettingsFromStorage();
+      setCompanySettings(current);
+    };
+    window.addEventListener('company-settings-updated', handleUpdate);
+    return () => window.removeEventListener('company-settings-updated', handleUpdate);
+  }, []);
+
+  // Cálculo inverso de cabines viáveis para o poço informado (100% independente da página por cabine)
+  const shaftCabinCalculation = useMemo(() => {
+    return calculatePossibleCabinsFromShaft({
+      larguraPoco: shaftConfig.larguraPoco,
+      profundidadePoco: shaftConfig.profundidadePoco,
+      acionamento: shaftConfig.acionamento,
+      arcada: shaftConfig.arcada,
+      ladoArcada: shaftConfig.ladoArcada,
+      tipoEntrada: shaftConfig.tipoEntrada,
+      tipoPorta: shaftConfig.tipoPorta,
+      ladoPorta: shaftConfig.ladoPorta,
+      customMenorFolga: cabinState.customMenorFolga,
+      customFolgaFrontal: cabinState.customFolgaFrontal,
+      customFolgaFundo: cabinState.customFolgaFundo,
+      baseChassisHidraulicoL: cabinState.baseChassisHidraulicoL,
+      baseChassisHidraulicoSuspensao: cabinState.baseChassisHidraulicoSuspensao,
+      baseChassisEletricoL: cabinState.baseChassisEletricoL,
+      baseChassisEletricoSuspensaoLateral: cabinState.baseChassisEletricoSuspensaoLateral,
+      baseChassisEletricoSuspensaoFundo: cabinState.baseChassisEletricoSuspensaoFundo,
+    });
+  }, [
+    shaftConfig,
+    cabinState.customMenorFolga,
+    cabinState.customFolgaFrontal,
+    cabinState.customFolgaFundo,
+    cabinState.baseChassisHidraulicoL,
+    cabinState.baseChassisHidraulicoSuspensao,
+    cabinState.baseChassisEletricoL,
+    cabinState.baseChassisEletricoSuspensaoLateral,
+    cabinState.baseChassisEletricoSuspensaoFundo,
+  ]);
+
+  // Estado ativo da cabine (direto no modo cabine, ou derivado da cabine calculada no modo poço)
+  const activeState = useMemo<ElevatorConfigState>(() => {
+    if (configMode === 'cabine') {
+      return cabinState;
+    }
+
+    // No modo poço: calcula a cabine que cabe dentro do poço informado
+    let selectedCabin = shaftCabinCalculation.cabineMaxima;
+    if (shaftConfig.selectedCabinKey && shaftCabinCalculation.cabinesPossiveis.length > 0) {
+      const found = shaftCabinCalculation.cabinesPossiveis.find(
+        (c) => `${c.larguraCabine}x${c.profundidadeCabine}` === shaftConfig.selectedCabinKey
+      );
+      if (found) {
+        selectedCabin = found;
+      }
+    }
+
+    const larguraCabine = selectedCabin?.larguraCabine ?? 800;
+    const profundidadeCabine = selectedCabin?.profundidadeCabine ?? 1200;
+    const ladoFace =
+      (shaftConfig.ladoPorta || 'Largura') === 'Profundidade' ? profundidadeCabine : larguraCabine;
+    const ladoEfetivo =
+      shaftConfig.tipoEntrada === 'Adjacente' ? Math.min(larguraCabine, profundidadeCabine) : ladoFace;
+    const aberturaPorta = selectedCabin?.maxAberturaPorta || getMaiorAberturaValida(ladoEfetivo);
+
+    return {
+      larguraCabine: larguraCabine.toString(),
+      profundidadeCabine: profundidadeCabine.toString(),
+      ladoPorta: shaftConfig.ladoPorta,
+      aberturaPorta,
+      acionamento: shaftConfig.acionamento,
+      arcada: shaftConfig.arcada,
+      posicao: shaftConfig.posicao,
+      tipoPorta: shaftConfig.tipoPorta,
+      tipoEntrada: shaftConfig.tipoEntrada,
+      ladoArcada: shaftConfig.ladoArcada,
+      // Preserva folgas personalizadas salvas
+      customMenorFolga: cabinState.customMenorFolga,
+      customFolgaFrontal: cabinState.customFolgaFrontal,
+      customFolgaFundo: cabinState.customFolgaFundo,
+      baseChassisHidraulicoL: cabinState.baseChassisHidraulicoL,
+      baseChassisHidraulicoSuspensao: cabinState.baseChassisHidraulicoSuspensao,
+      baseChassisEletricoL: cabinState.baseChassisEletricoL,
+      baseChassisEletricoSuspensaoLateral: cabinState.baseChassisEletricoSuspensaoLateral,
+      baseChassisEletricoSuspensaoFundo: cabinState.baseChassisEletricoSuspensaoFundo,
+      basePorta2FL: cabinState.basePorta2FL,
+      basePorta3FL: cabinState.basePorta3FL,
+      basePorta2FC: cabinState.basePorta2FC,
+      basePorta4FC: cabinState.basePorta4FC,
+    };
+  }, [configMode, cabinState, shaftCabinCalculation, shaftConfig]);
+
+  // Resultados normativos e dimensionais
   const results = useMemo(() => {
-    return calculateElevator(state);
-  }, [state]);
+    if (configMode === 'cabine') {
+      return calculateElevator(cabinState);
+    }
+
+    return calculateElevator(activeState, {
+      forcedLarguraPoco: shaftConfig.larguraPoco,
+      forcedProfundidadePoco: shaftConfig.profundidadePoco,
+      isCalculadoPorPoco: true,
+    });
+  }, [configMode, cabinState, activeState, shaftConfig.larguraPoco, shaftConfig.profundidadePoco]);
 
   const hasCustomClearances = useMemo(() => {
     return Boolean(
-      state.customMenorFolga !== undefined ||
-      state.customFolgaFrontal !== undefined ||
-      state.customFolgaFundo !== undefined ||
-      state.baseChassisHidraulicoL !== undefined ||
-      state.baseChassisHidraulicoSuspensao !== undefined ||
-      state.baseChassisEletricoL !== undefined ||
-      state.baseChassisEletricoSuspensaoLateral !== undefined ||
-      state.baseChassisEletricoSuspensaoFundo !== undefined ||
-      state.basePorta2FL !== undefined ||
-      state.basePorta3FL !== undefined ||
-      state.basePorta2FC !== undefined ||
-      state.basePorta4FC !== undefined
+      cabinState.customMenorFolga !== undefined ||
+      cabinState.customFolgaFrontal !== undefined ||
+      cabinState.customFolgaFundo !== undefined ||
+      cabinState.baseChassisHidraulicoL !== undefined ||
+      cabinState.baseChassisHidraulicoSuspensao !== undefined ||
+      cabinState.baseChassisEletricoL !== undefined ||
+      cabinState.baseChassisEletricoSuspensaoLateral !== undefined ||
+      cabinState.baseChassisEletricoSuspensaoFundo !== undefined ||
+      cabinState.basePorta2FL !== undefined ||
+      cabinState.basePorta3FL !== undefined ||
+      cabinState.basePorta2FC !== undefined ||
+      cabinState.basePorta4FC !== undefined
     );
-  }, [state]);
+  }, [cabinState]);
 
   const handleGeneratePdf = async () => {
     setIsGeneratingPdf(true);
@@ -79,7 +207,12 @@ export default function ElevatorConfiguratorPage() {
           console.warn('Canvas capture error:', e);
         }
       }
-      await generateElevatorPdf({ state, results, blueprintDataUrl });
+      await generateElevatorPdf({
+        state: activeState,
+        results,
+        blueprintDataUrl,
+        companySettings,
+      });
     } catch (e) {
       console.error('Erro ao gerar PDF:', e);
     } finally {
@@ -93,20 +226,36 @@ export default function ElevatorConfiguratorPage() {
       <header className="border-b border-slate-800/80 bg-slate-950/90 backdrop-blur sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-              <Building2 className="w-5 h-5" />
-            </div>
+            {companySettings.logoDataUrl ? (
+              <button
+                type="button"
+                onClick={() => setIsSystemSettingsOpen(true)}
+                title="Logotipo da Empresa (Clique para alterar nas Configurações do Sistema)"
+                className="h-10 max-w-[130px] sm:max-w-[180px] bg-slate-900 border border-cyan-500/40 hover:border-cyan-400 px-2 py-1 rounded-xl flex items-center justify-center overflow-hidden shadow-sm cursor-pointer transition-all group shrink-0"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={companySettings.logoDataUrl}
+                  alt={companySettings.companyName || 'Logo da Empresa'}
+                  className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform"
+                />
+              </button>
+            ) : (
+              <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shrink-0">
+                <Building2 className="w-5 h-5" />
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  Configurador de Elevador
+                <h1 className="text-sm sm:text-base font-bold text-white tracking-tight truncate max-w-[170px] sm:max-w-[280px]">
+                  {companySettings.companyName || 'Configurador de Elevador'}
                 </h1>
                 <span className="hidden sm:inline-block px-2 py-0.5 text-[11px] font-medium text-cyan-300 bg-cyan-950/60 border border-cyan-800/60 rounded-full font-mono">
-                  v2.0 Web CAD
+                  {companySettings.logoDataUrl ? 'Personalizado' : 'v2.0 Web CAD'}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
-                Dimensionamento de poço, cabine e arcada com planta baixa técnica interativa
+              <p className="text-xs text-slate-400 hidden sm:block truncate max-w-[320px]">
+                {companySettings.subtitle || 'Dimensionamento de poço, cabine e arcada com planta baixa técnica'}
               </p>
             </div>
           </div>
@@ -134,7 +283,7 @@ export default function ElevatorConfiguratorPage() {
               <div className="flex items-center gap-1.5">
                 <span className="text-slate-400">Cabine:</span>
                 <span className="text-slate-200">
-                  {state.larguraCabine} × {state.profundidadeCabine} mm
+                  {activeState.larguraCabine} × {activeState.profundidadeCabine} mm
                 </span>
               </div>
               <div className="w-[1px] h-3 bg-slate-800" />
@@ -152,6 +301,22 @@ export default function ElevatorConfiguratorPage() {
                 </span>
               </div>
             </div>
+
+            {/* Header Configurações do Sistema Button */}
+            <button
+              id="btn-header-system-settings"
+              type="button"
+              onClick={() => setIsSystemSettingsOpen(true)}
+              title="Configurações do Sistema, Logotipo e Marca d'Água"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer border bg-slate-900 border-slate-800 text-slate-200 hover:text-cyan-400 hover:bg-slate-800 hover:border-slate-700 shadow-sm"
+            >
+              <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">Configurações do Sistema</span>
+              <span className="sm:hidden">Sistema</span>
+              {companySettings.logoDataUrl && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm" title="Logotipo ativo" />
+              )}
+            </button>
 
             {/* Header Calcular por Poço Button */}
             <button
@@ -240,13 +405,16 @@ export default function ElevatorConfiguratorPage() {
             }`}
           >
             <ConfigPanel
-              state={state}
-              onChange={setState}
+              state={cabinState}
+              onChange={setCabinState}
               configMode={configMode}
               onConfigModeChange={setConfigMode}
+              onOpenSystemSettings={() => setIsSystemSettingsOpen(true)}
+              shaftConfig={shaftConfig}
+              onShaftConfigChange={setShaftConfig}
             />
             <ResultsPanel
-              state={state}
+              state={activeState}
               results={results}
               onViewBlueprint={() => {
                 setMobileTab('blueprint');
@@ -283,7 +451,7 @@ export default function ElevatorConfiguratorPage() {
           >
             <div className="h-[600px] sm:h-[680px] lg:h-[740px] w-full">
               <BlueprintCanvas
-                state={state}
+                state={activeState}
                 results={results}
                 activeTab={mobileTab}
                 onOpenBlueprintTab={() => setMobileTab('blueprint')}
@@ -313,7 +481,7 @@ export default function ElevatorConfiguratorPage() {
                   Acionamento
                 </span>
                 <span className="text-xs font-semibold text-slate-200 mt-0.5 block">
-                  {state.acionamento}
+                  {activeState.acionamento}
                 </span>
               </div>
               <div className="bg-slate-900 border border-slate-800/80 rounded-lg p-2.5">
@@ -321,7 +489,7 @@ export default function ElevatorConfiguratorPage() {
                   Arcada / Sling
                 </span>
                 <span className="text-xs font-semibold text-slate-200 mt-0.5 block truncate">
-                  {state.arcada === 'L' ? 'Tipo L' : 'Suspensão'}
+                  {activeState.arcada === 'L' ? 'Tipo L' : 'Suspensão'}
                 </span>
               </div>
               <div className="bg-slate-900 border border-slate-800/80 rounded-lg p-2.5">
@@ -329,7 +497,7 @@ export default function ElevatorConfiguratorPage() {
                   Entrada
                 </span>
                 <span className="text-xs font-semibold text-slate-200 mt-0.5 block">
-                  {state.tipoEntrada}
+                  {activeState.tipoEntrada}
                 </span>
               </div>
               <div className="bg-slate-900 border border-slate-800/80 rounded-lg p-2.5">
@@ -337,7 +505,7 @@ export default function ElevatorConfiguratorPage() {
                   Porta
                 </span>
                 <span className="text-xs font-semibold text-slate-200 mt-0.5 block truncate">
-                  {state.tipoPorta} ({state.aberturaPorta}mm)
+                  {activeState.tipoPorta} ({activeState.aberturaPorta}mm)
                 </span>
               </div>
             </div>
@@ -360,6 +528,12 @@ export default function ElevatorConfiguratorPage() {
           </div>
         </div>
       </footer>
+      {/* Modal de Configurações do Sistema e Logotipo */}
+      <SystemSettingsModal
+        isOpen={isSystemSettingsOpen}
+        onClose={() => setIsSystemSettingsOpen(false)}
+        onSettingsSaved={(newSettings) => setCompanySettings(newSettings)}
+      />
     </div>
   );
 }

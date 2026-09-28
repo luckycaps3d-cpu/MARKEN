@@ -23,6 +23,9 @@ export const TIPOS_ENTRADA: TipoEntrada[] = ['Unilateral', 'Oposta', 'Adjacente'
 export const LADOS_ARCADA: LadoArcada[] = ['Lateral', 'Fundo'];
 export const LADOS_INSTALACAO_PORTA: LadoInstalacaoPorta[] = ['Largura', 'Profundidade'];
 export const ABERTURAS_PORTA = [
+  '500',
+  '600',
+  '650',
   '700',
   '800',
   '900',
@@ -58,9 +61,48 @@ export interface ElevatorConfigState {
   basePorta4FC?: number;
 }
 
+export interface ShaftConfigState {
+  larguraPoco: number;
+  profundidadePoco: number;
+  acionamento: Acionamento;
+  arcada: Arcada;
+  posicao: Posicao;
+  tipoPorta: TipoPorta;
+  tipoEntrada: TipoEntrada;
+  ladoArcada: LadoArcada;
+  ladoPorta: LadoInstalacaoPorta;
+  selectedCabinKey?: string | null;
+}
+
+export const INITIAL_SHAFT_STATE: ShaftConfigState = {
+  larguraPoco: 1600,
+  profundidadePoco: 1700,
+  acionamento: 'Elétrico',
+  arcada: 'L',
+  posicao: 'Centralizado',
+  tipoPorta: '2 Folhas Lateral',
+  tipoEntrada: 'Unilateral',
+  ladoArcada: 'Lateral',
+  ladoPorta: 'Largura',
+  selectedCabinKey: null,
+};
+
+export interface CalculateElevatorOptions {
+  forcedLarguraPoco?: number;
+  forcedProfundidadePoco?: number;
+  isCalculadoPorPoco?: boolean;
+}
+
 export interface ElevatorCalculationResults {
   larguraPoco: number;
   profundidadePoco: number;
+  larguraPocoMinima?: number;
+  profundidadePocoMinima?: number;
+  sobraLarguraPoco?: number;
+  sobraProfundidadePoco?: number;
+  isCalculadoPorPoco?: boolean;
+  larguraPocoInformada?: number;
+  profundidadePocoInformada?: number;
   folgaPorta: number;
   espacoChassis: number;
   menorFolga: number;
@@ -82,6 +124,8 @@ export interface ElevatorCalculationResults {
   montanteFrontalMm: number;
   maxAberturaSugeridaMm: number;
   erroValidacaoPorta?: string;
+  isForaDaNorma?: boolean;
+  alertaNormativo?: string;
 }
 
 // Tabela 6 da ABNT NBR 16858-1: Carga nominal (kg) e Área útil máxima da cabina (m²)
@@ -306,17 +350,26 @@ export const ELEVATOR_PRESETS: ElevatorPreset[] = [
  * Faixa técnica padrão: de 100 em 100 mm, começando em 700 mm até 1200 mm.
  */
 export function getMaiorAberturaValida(ladoMm: number): string {
-  const aberturasNumericas = [700, 800, 900, 1000, 1100, 1200];
+  const aberturasNumericas = [500, 600, 650, 700, 800, 900, 1000, 1100, 1200];
   const validas = aberturasNumericas.filter((a) => a < ladoMm);
   if (validas.length > 0) {
     return String(validas[validas.length - 1]);
   }
-  return '700';
+  const menorAbertura = Math.max(400, Math.floor((ladoMm - 100) / 50) * 50);
+  return String(menorAbertura);
 }
 
-export function calculateElevator(state: ElevatorConfigState): ElevatorCalculationResults {
+export function calculateElevator(
+  state: ElevatorConfigState,
+  options?: CalculateElevatorOptions
+): ElevatorCalculationResults {
   const largura = parseInt(state.larguraCabine, 10) || 800;
   const profundidade = parseInt(state.profundidadeCabine, 10) || 1250;
+  
+  const isForaDaNorma = largura < 800 || profundidade < 1200;
+  const alertaNormativo = isForaDaNorma
+    ? `Atenção: Dimensões da cabine (${largura} × ${profundidade} mm) inferiores ao mínimo recomendado pela norma ABNT NBR 16858-1 / NM 313 (mínimo padrão de 800 × 1200 mm para residencial / 1100 × 1400 mm para acessibilidade). Projeto especial sob medida para espaço físico restrito.`
+    : undefined;
   
   const aberturaMm = parseInt(state.aberturaPorta, 10) || 700;
   // Índice de degrau baseado em 700 mm com passos de 100 mm (0 para 700, 1 para 800, etc.)
@@ -360,15 +413,21 @@ export function calculateElevator(state: ElevatorConfigState): ElevatorCalculati
   const folgaEntradaOposta = state.tipoEntrada === 'Oposta' ? 160 : 0;
   const folgaEntradaAdjacente = state.tipoEntrada === 'Adjacente' ? 160 : 0;
 
-  const larguraPoco =
+  const larguraPocoCalculada =
     state.ladoArcada === 'Lateral'
       ? largura + espacoChassis + menorFolga + folgaEntradaAdjacente
       : largura + menorFolga * 2 + folgaEntradaAdjacente;
 
-  const profundidadePoco =
+  const profundidadePocoCalculada =
     state.ladoArcada === 'Fundo'
       ? profundidade + folgaFrontal + espacoChassis + folgaEntradaOposta
       : profundidade + folgaFrontal + folgaFundoPadrao + folgaEntradaOposta;
+
+  const isPorPoco = Boolean(options?.isCalculadoPorPoco && options?.forcedLarguraPoco && options?.forcedProfundidadePoco);
+  const larguraPoco = isPorPoco ? options!.forcedLarguraPoco! : larguraPocoCalculada;
+  const profundidadePoco = isPorPoco ? options!.forcedProfundidadePoco! : profundidadePocoCalculada;
+  const sobraLarguraPoco = isPorPoco ? Math.max(0, larguraPoco - larguraPocoCalculada) : undefined;
+  const sobraProfundidadePoco = isPorPoco ? Math.max(0, profundidadePoco - profundidadePocoCalculada) : undefined;
 
   const tipoSuporte =
     state.arcada === 'Suspensão' ? 'Braket Suspensão' : 'Suporte Guia Tipo L';
@@ -408,6 +467,13 @@ export function calculateElevator(state: ElevatorConfigState): ElevatorCalculati
   return {
     larguraPoco,
     profundidadePoco,
+    larguraPocoMinima: larguraPocoCalculada,
+    profundidadePocoMinima: profundidadePocoCalculada,
+    sobraLarguraPoco,
+    sobraProfundidadePoco,
+    isCalculadoPorPoco: isPorPoco,
+    larguraPocoInformada: isPorPoco ? options!.forcedLarguraPoco : undefined,
+    profundidadePocoInformada: isPorPoco ? options!.forcedProfundidadePoco : undefined,
     folgaPorta,
     espacoChassis,
     menorFolga,
@@ -427,6 +493,8 @@ export function calculateElevator(state: ElevatorConfigState): ElevatorCalculati
     montanteFrontalMm,
     maxAberturaSugeridaMm,
     erroValidacaoPorta,
+    isForaDaNorma,
+    alertaNormativo,
   };
 }
 
@@ -449,6 +517,8 @@ export interface PossibleCabinOption {
   isMaxAproveitamento: boolean;
   proporcao: 'Quadrada' | 'Profunda' | 'Larga';
   tag?: string;
+  isForaDaNorma?: boolean;
+  alertaNormativo?: string;
 }
 
 export interface ShaftToCabinsInput {
@@ -475,12 +545,14 @@ export interface ShaftToCabinsResult {
   profundidadePocoInformada: number;
   larguraCabineMax: number; // Múltiplo de 50
   profundidadeCabineMax: number; // Múltiplo de 50
-  cabineMaxima: PossibleCabinOption | null;
+  cabineMaxima: PossibleCabinOption;
   cabinesPossiveis: PossibleCabinOption[];
   espacoChassis: number;
   menorFolga: number;
   folgaFrontal: number;
   folgaFundoPadrao: number;
+  isForaDaNorma: boolean;
+  alertaNormativo?: string;
   isPocoInsuficiente: boolean;
   motivoInsuficiente?: string;
 }
@@ -559,6 +631,8 @@ export function calculateShaftClearances({
  * Calcula todas as dimensões de cabine possíveis para uma determinada medida de poço.
  * Garante que TODAS as medidas de cabine (largura e profundidade) sejam estritamente
  * múltiplos de 50 mm (arredondamento seguro para baixo, sem números quebrados).
+ * Mesmo quando as dimensões forem inferiores às normas ABNT NBR 16858-1 / NM 313,
+ * a cabine é SEMPRE dimensionada para caber no poço informado, emitindo um alerta normativo.
  */
 export function calculatePossibleCabinsFromShaft(
   input: ShaftToCabinsInput
@@ -587,50 +661,41 @@ export function calculatePossibleCabinsFromShaft(
     baseChassisEletricoSuspensaoFundo: input.baseChassisEletricoSuspensaoFundo,
   });
 
-  // Espaço livre máximo bruto disponível
-  const maxLarguraBruta = lp - clearances.espacoFixoLargura;
-  const maxProfundidadeBruta = pp - clearances.espacoFixoProfundidade;
+  // Espaço livre máximo bruto disponível após dedução do chassi e folgas
+  const rawMaxW = lp - clearances.espacoFixoLargura;
+  const rawMaxD = pp - clearances.espacoFixoProfundidade;
 
   // Arredonda para baixo para o múltiplo de 50 mm mais próximo (sem número quebrado!)
-  const larguraCabineMax = Math.max(0, Math.floor(maxLarguraBruta / 50) * 50);
-  const profundidadeCabineMax = Math.max(0, Math.floor(maxProfundidadeBruta / 50) * 50);
+  // Garante uma cabine mínima de 300 mm mesmo em poços hiper-compactos
+  const larguraCabineMax = Math.max(300, Math.floor(rawMaxW / 50) * 50);
+  const profundidadeCabineMax = Math.max(300, Math.floor(rawMaxD / 50) * 50);
 
-  // Verificação de poço insuficiente
-  if (larguraCabineMax < 700 || profundidadeCabineMax < 750) {
-    return {
-      larguraPocoInformada: lp,
-      profundidadePocoInformada: pp,
-      larguraCabineMax,
-      profundidadeCabineMax,
-      cabineMaxima: null,
-      cabinesPossiveis: [],
-      espacoChassis: clearances.espacoChassis,
-      menorFolga: clearances.menorFolga,
-      folgaFrontal: clearances.folgaFrontal,
-      folgaFundoPadrao: clearances.folgaFundoPadrao,
-      isPocoInsuficiente: true,
-      motivoInsuficiente: `Dimensão de poço insuficiente para um elevador normatizado. O espaço útil resultante seria de ${larguraCabineMax} × ${profundidadeCabineMax} mm (mínimo recomendado: cabine de 800 × 1200 mm, exigindo poço mín. de aprox. ${800 + clearances.espacoFixoLargura} × ${1200 + clearances.espacoFixoProfundidade} mm).`,
-    };
-  }
+  // Verificação normativa ABNT NBR 16858-1 / NBR NM 313:
+  // Mínimo para residencial/homelift recomendado: 800 x 1200 mm
+  // Mínimo para acessibilidade cadeirante: 1100 x 1400 mm
+  const isForaDaNorma = larguraCabineMax < 800 || profundidadeCabineMax < 1200;
+  const isPocoMuitoApertado = rawMaxW < 450 || rawMaxD < 500;
 
-  // Gera opções viáveis em múltiplos de 50 mm
-  // 1. Gera variações sistemáticas com passo de 50 mm
+  const alertaNormativo = isForaDaNorma
+    ? `Atenção: Dimensões da cabine (${larguraCabineMax} × ${profundidadeCabineMax} mm) abaixo do mínimo recomendado pela norma ABNT NBR 16858-1 / NM 313 (mínimo normativo padrão: 800 × 1200 mm). Dimensionamento sob medida executado para atender ao espaço físico real informado da obra.`
+    : undefined;
+
+  // Gera opções viáveis em múltiplos de 50 mm que cabem no poço
   const pairsSet = new Set<string>();
   const addPair = (w: number, d: number) => {
-    // Garante que é múltiplo de 50
     const w50 = Math.floor(w / 50) * 50;
     const d50 = Math.floor(d / 50) * 50;
-    if (w50 >= 700 && w50 <= larguraCabineMax && d50 >= 800 && d50 <= profundidadeCabineMax) {
+    if (w50 >= 300 && w50 <= larguraCabineMax && d50 >= 300 && d50 <= profundidadeCabineMax) {
       pairsSet.add(`${w50}x${d50}`);
     }
   };
 
-  // Cabine Máxima
+  // 1. Cabine de Máximo Aproveitamento
   addPair(larguraCabineMax, profundidadeCabineMax);
 
-  // Variações a partir do máximo em múltiplos de 50
-  const minW = Math.max(750, larguraCabineMax - 400);
-  const minD = Math.max(800, profundidadeCabineMax - 500);
+  // 2. Variações sistemáticas a partir do máximo com passo de 50 mm
+  const minW = Math.max(400, larguraCabineMax - 400);
+  const minD = Math.max(500, profundidadeCabineMax - 500);
 
   for (let w = larguraCabineMax; w >= minW; w -= 50) {
     for (let d = profundidadeCabineMax; d >= minD; d -= 50) {
@@ -638,8 +703,14 @@ export function calculatePossibleCabinsFromShaft(
     }
   }
 
-  // Adiciona tamanhos de mercado padronizados se couberem no poço
+  // 3. Adiciona tamanhos padronizados de mercado caso caibam no poço
   const standardSizes = [
+    [500, 800],
+    [600, 800],
+    [600, 900],
+    [700, 900],
+    [700, 1000],
+    [800, 1000],
     [800, 1200],
     [850, 1200],
     [900, 1200],
@@ -676,7 +747,7 @@ export function calculatePossibleCabinsFromShaft(
     const passageiros = calcularPassageirosNBR(areaM2);
     const carga = calcularCargaUtilNBR(areaM2, passageiros).cargaNominalPadrao;
 
-    // Porta compatível
+    // Porta compatível (sempre menor que a face de instalação)
     const ladoFace = ladoPorta === 'Profundidade' ? d : w;
     const ladoEfetivo = tipoEntrada === 'Adjacente' ? Math.min(w, d) : ladoFace;
     const maxAbertura = getMaiorAberturaValida(ladoEfetivo);
@@ -692,14 +763,16 @@ export function calculatePossibleCabinsFromShaft(
         ? d + clearances.folgaFrontal + clearances.espacoChassis + clearances.folgaEntradaOposta
         : d + clearances.folgaFrontal + clearances.folgaFundoPadrao + clearances.folgaEntradaOposta;
 
-    const sobraLP = lp - lpMin;
-    const sobraPP = pp - ppMin;
+    const sobraLP = Math.max(0, lp - lpMin);
+    const sobraPP = Math.max(0, pp - ppMin);
 
     const isMax = w === larguraCabineMax && d === profundidadeCabineMax;
 
     let proporcao: 'Quadrada' | 'Profunda' | 'Larga' = 'Quadrada';
     if (d > w + 100) proporcao = 'Profunda';
     else if (w > d + 100) proporcao = 'Larga';
+
+    const itemForaNorma = w < 800 || d < 1200;
 
     let tag: string | undefined = undefined;
     if (isMax) {
@@ -712,6 +785,8 @@ export function calculatePossibleCabinsFromShaft(
       tag = 'Comercial Padrão (6 Pass.)';
     } else if (w <= 900 && d <= 1200) {
       tag = 'Residencial Compacto';
+    } else if (itemForaNorma) {
+      tag = 'Sob Medida (Compacto)';
     }
 
     cabinesPossiveis.push({
@@ -728,6 +803,10 @@ export function calculatePossibleCabinsFromShaft(
       isMaxAproveitamento: isMax,
       proporcao,
       tag,
+      isForaDaNorma: itemForaNorma,
+      alertaNormativo: itemForaNorma
+        ? `Cabine com dimensões (${w} × ${d} mm) inferiores ao padrão normativo ABNT NBR 16858-1 / NM 313 (800 × 1200 mm).`
+        : undefined,
     });
   });
 
@@ -741,8 +820,25 @@ export function calculatePossibleCabinsFromShaft(
     return b.larguraCabine - a.larguraCabine;
   });
 
-  const cabineMaxima =
-    cabinesPossiveis.find((c) => c.isMaxAproveitamento) || cabinesPossiveis[0] || null;
+  // Garante que SEMPRE há uma cabine máxima para alimentar a planta e os cálculos
+  const cabineMaxima: PossibleCabinOption =
+    cabinesPossiveis.find((c) => c.isMaxAproveitamento) ||
+    cabinesPossiveis[0] || {
+      larguraCabine: larguraCabineMax,
+      profundidadeCabine: profundidadeCabineMax,
+      areaCabineM2: Number(((larguraCabineMax * profundidadeCabineMax) / 1_000_000).toFixed(2)),
+      numeroPassageiros: 1,
+      cargaUtilKg: 100,
+      maxAberturaPorta: '500',
+      larguraPocoMinima: lp,
+      profundidadePocoMinima: pp,
+      sobraLarguraPoco: 0,
+      sobraProfundidadePoco: 0,
+      isMaxAproveitamento: true,
+      proporcao: 'Quadrada',
+      isForaDaNorma: true,
+      alertaNormativo,
+    };
 
   return {
     larguraPocoInformada: lp,
@@ -755,7 +851,12 @@ export function calculatePossibleCabinsFromShaft(
     menorFolga: clearances.menorFolga,
     folgaFrontal: clearances.folgaFrontal,
     folgaFundoPadrao: clearances.folgaFundoPadrao,
-    isPocoInsuficiente: false,
+    isForaDaNorma,
+    alertaNormativo,
+    isPocoInsuficiente: isPocoMuitoApertado,
+    motivoInsuficiente: isPocoMuitoApertado
+      ? `Atenção: Dimensões de poço informadas (${lp} × ${pp} mm) resultam em espaço interno muito reduzido (${rawMaxW} × ${rawMaxD} mm livre). A cabine foi calculada para ${larguraCabineMax} × ${profundidadeCabineMax} mm.`
+      : undefined,
   };
 }
 

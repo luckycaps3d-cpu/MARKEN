@@ -19,6 +19,7 @@ import {
   FileDown,
   Loader2,
   Building2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface ResultsPanelProps {
@@ -179,6 +180,24 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
         </div>
       </div>
 
+      {/* Alerta Normativo se a cabine estiver fora da norma (dimensões reduzidas sob medida) */}
+      {results.isForaDaNorma && (
+        <div className="mb-4 bg-amber-950/50 border border-amber-500/60 rounded-xl p-3.5 flex items-start gap-3 text-amber-200">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <span className="font-bold text-amber-300 block uppercase tracking-wide">
+              Aviso Normativo ABNT NBR 16858-1 / NM 313
+            </span>
+            <span className="text-amber-200/90 mt-0.5 block leading-relaxed">
+              As dimensões da cabine ({state.larguraCabine} × {state.profundidadeCabine} mm) são inferiores ao padrão normativo mínimo recomendado (800 × 1200 mm para residencial / 1100 × 1400 mm para acessibilidade).
+            </span>
+            <span className="text-[11px] text-emerald-300 mt-1 block font-medium">
+              ✓ Dimensionamento sob medida aplicado com sucesso para o poço informado.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Primary Highlights: 4 Key Result Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
         {/* Número de Passageiros (NBR 16858-1) */}
@@ -228,11 +247,21 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
         </div>
 
         {/* Largura do Poço */}
-        <div className="p-3.5 rounded-xl bg-gradient-to-br from-cyan-950/40 to-slate-950/70 border border-cyan-500/30">
+        <div className={`p-3.5 rounded-xl border ${
+          results.isCalculadoPorPoco
+            ? 'bg-gradient-to-br from-emerald-950/40 to-slate-950/70 border-emerald-500/40'
+            : 'bg-gradient-to-br from-cyan-950/40 to-slate-950/70 border-cyan-500/30'
+        }`}>
           <div className="flex items-center justify-between text-xs text-cyan-300 font-medium mb-1">
-            <span>Largura do Poço (LP)</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-900/60 text-cyan-200 font-mono">
-              Eixo X
+            <span className={results.isCalculadoPorPoco ? 'text-emerald-300' : 'text-cyan-300'}>
+              Largura do Poço (LP)
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+              results.isCalculadoPorPoco
+                ? 'bg-emerald-900/60 text-emerald-200'
+                : 'bg-cyan-900/60 text-cyan-200'
+            }`}>
+              {results.isCalculadoPorPoco ? 'Medida Informada' : 'Eixo X'}
             </span>
           </div>
           <div className="flex items-baseline gap-1.5">
@@ -242,17 +271,35 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
             <span className="text-sm text-cyan-400 font-mono">mm</span>
           </div>
           <p className="text-[11px] text-slate-400 mt-1">
-            Cabine ({state.larguraCabine}) + Chassis ({results.espacoChassis}) + Folgas ({results.menorFolga}
-            {state.tipoEntrada === 'Adjacente' ? ' + 160' : ''})
+            {results.isCalculadoPorPoco ? (
+              <>
+                Cabine calculada: <strong className="text-slate-200 font-mono">{state.larguraCabine} mm</strong> | Sobra no poço: <strong className="text-emerald-400 font-mono">+{results.sobraLarguraPoco ?? 0} mm</strong>
+              </>
+            ) : (
+              <>
+                Cabine ({state.larguraCabine}) + Chassis ({results.espacoChassis}) + Folgas ({results.menorFolga}
+                {state.tipoEntrada === 'Adjacente' ? ' + 160' : ''})
+              </>
+            )}
           </p>
         </div>
 
         {/* Profundidade do Poço */}
-        <div className="p-3.5 rounded-xl bg-gradient-to-br from-cyan-950/40 to-slate-950/70 border border-cyan-500/30">
+        <div className={`p-3.5 rounded-xl border ${
+          results.isCalculadoPorPoco
+            ? 'bg-gradient-to-br from-emerald-950/40 to-slate-950/70 border-emerald-500/40'
+            : 'bg-gradient-to-br from-cyan-950/40 to-slate-950/70 border-cyan-500/30'
+        }`}>
           <div className="flex items-center justify-between text-xs text-cyan-300 font-medium mb-1">
-            <span>Profundidade do Poço (PP)</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-900/60 text-cyan-200 font-mono">
-              Eixo Y
+            <span className={results.isCalculadoPorPoco ? 'text-emerald-300' : 'text-cyan-300'}>
+              Profundidade do Poço (PP)
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+              results.isCalculadoPorPoco
+                ? 'bg-emerald-900/60 text-emerald-200'
+                : 'bg-cyan-900/60 text-cyan-200'
+            }`}>
+              {results.isCalculadoPorPoco ? 'Medida Informada' : 'Eixo Y'}
             </span>
           </div>
           <div className="flex items-baseline gap-1.5">
@@ -262,9 +309,17 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
             <span className="text-sm text-cyan-400 font-mono">mm</span>
           </div>
           <p className="text-[11px] text-slate-400 mt-1">
-            Cabine ({state.profundidadeCabine}) + Frontal ({results.folgaFrontal}) + Fundo (
-            {state.ladoArcada === 'Fundo' ? results.espacoChassis : 120}
-            {state.tipoEntrada === 'Oposta' ? ' + 160' : ''})
+            {results.isCalculadoPorPoco ? (
+              <>
+                Cabine calculada: <strong className="text-slate-200 font-mono">{state.profundidadeCabine} mm</strong> | Sobra no poço: <strong className="text-emerald-400 font-mono">+{results.sobraProfundidadePoco ?? 0} mm</strong>
+              </>
+            ) : (
+              <>
+                Cabine ({state.profundidadeCabine}) + Frontal ({results.folgaFrontal}) + Fundo (
+                {state.ladoArcada === 'Fundo' ? results.espacoChassis : 120}
+                {state.tipoEntrada === 'Oposta' ? ' + 160' : ''})
+              </>
+            )}
           </p>
         </div>
       </div>

@@ -7,6 +7,11 @@ import {
 } from '@/lib/elevator-calculator';
 import { generateElevatorPdf } from '@/lib/elevator-pdf';
 import {
+  CompanySettings,
+  DEFAULT_COMPANY_SETTINGS,
+  loadCompanySettingsFromStorage,
+} from '@/lib/company-settings';
+import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
@@ -23,6 +28,8 @@ import {
   Sparkles,
   FileDown,
   Loader2,
+  Building2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface BlueprintCanvasProps {
@@ -41,6 +48,22 @@ export function BlueprintCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // Configurações da Empresa e Imagem do Logo para o Canvas
+  const [companySettings, setCompanySettings] = useState<CompanySettings>(DEFAULT_COMPANY_SETTINGS);
+  const logoImageRef = useRef<HTMLImageElement | null>(null);
+
+  // Carrega configurações da empresa e escuta atualizações
+  useEffect(() => {
+    const loadSettings = () => {
+      const current = loadCompanySettingsFromStorage();
+      setCompanySettings(current);
+    };
+    loadSettings();
+
+    window.addEventListener('company-settings-updated', loadSettings);
+    return () => window.removeEventListener('company-settings-updated', loadSettings);
+  }, []);
 
   // Export Modal state
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -76,6 +99,7 @@ export function BlueprintCanvas({
         state,
         results,
         blueprintDataUrl: dataUrl,
+        companySettings,
       });
     } catch (err) {
       console.error('Erro ao gerar PDF:', err);
@@ -195,19 +219,29 @@ export function BlueprintCanvas({
       let cbX: number;
       let cbY: number;
 
-      if (isChassisSide) {
-        const leftClearance = espChassisScaled;
-        const availShaftInteriorX = pocoDrawWidth - cabineDrawWidth;
-        cbX = pocoLeft + Math.min(leftClearance, availShaftInteriorX * 0.72);
+      const folgaFrontalMm = results.folgaFrontal || 160;
+      const folgaFrontalScaled = folgaFrontalMm * scale;
 
-        const rearClearance = (isEntranceOpposite ? 160 : 120) * scale;
-        const availShaftInteriorY = pocoDrawHeight - cabineDrawHeight;
-        cbY = pocoTop + Math.min(rearClearance, availShaftInteriorY * 0.5);
+      if (isChassisSide) {
+        // Chassis na lateral esquerda
+        cbX = pocoLeft + espChassisScaled;
+        if (cbX + cabineDrawWidth > pocoLeft + pocoDrawWidth) {
+          cbX = pocoLeft + Math.max(0, (pocoDrawWidth - cabineDrawWidth) / 2);
+        }
+
+        // Porta frontal fica no fundo da tela (inferior/bottom)
+        const targetCbBottom = pocoTop + pocoDrawHeight - folgaFrontalScaled;
+        cbY = targetCbBottom - cabineDrawHeight;
+        if (cbY < pocoTop) {
+          cbY = pocoTop + Math.max(0, (pocoDrawHeight - cabineDrawHeight) / 2);
+        }
       } else {
-        const rearClearance = espChassisScaled;
-        const availShaftInteriorY = pocoDrawHeight - cabineDrawHeight;
-        cbY = pocoTop + Math.min(rearClearance, availShaftInteriorY * 0.72);
+        // Chassis no fundo (parede traseira / superior)
         cbX = pocoLeft + (pocoDrawWidth - cabineDrawWidth) / 2;
+        cbY = pocoTop + espChassisScaled;
+        if (cbY + cabineDrawHeight > pocoTop + pocoDrawHeight) {
+          cbY = pocoTop + Math.max(0, (pocoDrawHeight - cabineDrawHeight) / 2);
+        }
       }
 
       const cbRight = cbX + cabineDrawWidth;
@@ -983,11 +1017,32 @@ export function BlueprintCanvas({
       ctx.fillText(driveLabelText, driveCenterX, driveCenterY);
       ctx.restore();
 
+      // Marca d'água com o Logotipo da Empresa no fundo da planta baixa
+      if (companySettings.enableWatermark && logoImageRef.current) {
+        ctx.save();
+        const logoImg = logoImageRef.current;
+        const opacity = Math.max(0.04, Math.min(0.28, companySettings.watermarkOpacity || 0.12));
+        ctx.globalAlpha = opacity;
+
+        const maxWm = isHighResExport ? 760 : Math.min(width, height) * 0.5;
+        const aspect = logoImg.width / (logoImg.height || 1);
+        let wmW = maxWm;
+        let wmH = maxWm / aspect;
+        if (wmH > maxWm) {
+          wmH = maxWm;
+          wmW = maxWm * aspect;
+        }
+        const wmX = (width - wmW) / 2;
+        const wmY = (height - wmH) / 2;
+        ctx.drawImage(logoImg, wmX, wmY, wmW, wmH);
+        ctx.restore();
+      }
+
       ctx.restore(); // Restore zoom scale
 
       // 9. Technical Title Block (Carimbo Arquitetônico)
-      const tbWidth = isHighResExport ? 480 : isCompact ? 220 : 275;
-      const tbHeight = isHighResExport ? 175 : isCompact ? 84 : 100;
+      const tbWidth = isHighResExport ? 500 : isCompact ? 230 : 285;
+      const tbHeight = isHighResExport ? 180 : isCompact ? 88 : 104;
       const tbLeft = width - tbWidth - (isHighResExport ? 30 : 14);
       const tbTop = height - tbHeight - (isHighResExport ? 30 : 14);
 
@@ -998,6 +1053,29 @@ export function BlueprintCanvas({
       ctx.lineWidth = isHighResExport ? 2.5 : 1.5;
       ctx.strokeRect(tbLeft, tbTop, tbWidth, tbHeight);
 
+      // Miniatura do logo da empresa no canto do carimbo (se houver)
+      if (logoImageRef.current) {
+        try {
+          const logoThumb = logoImageRef.current;
+          const maxThumbW = isHighResExport ? 80 : 38;
+          const maxThumbH = isHighResExport ? 40 : 20;
+          const tAspect = logoThumb.width / (logoThumb.height || 1);
+          let tw = maxThumbW;
+          let th = maxThumbW / tAspect;
+          if (th > maxThumbH) {
+            th = maxThumbH;
+            tw = maxThumbH * tAspect;
+          }
+          const tx = tbLeft + tbWidth - tw - (isHighResExport ? 12 : 6);
+          const ty = tbTop + (isHighResExport ? 10 : 5);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(tx - 2, ty - 2, tw + 4, th + 4);
+          ctx.drawImage(logoThumb, tx, ty, tw, th);
+        } catch {
+          // ignore
+        }
+      }
+
       ctx.fillStyle = '#64FFDA';
       ctx.font = isHighResExport
         ? 'bold 18px system-ui, sans-serif'
@@ -1005,8 +1083,11 @@ export function BlueprintCanvas({
         ? 'bold 9px system-ui, sans-serif'
         : 'bold 10px system-ui, sans-serif';
       ctx.textAlign = 'left';
+      const companyHeader = companySettings.companyName
+        ? companySettings.companyName.toUpperCase().substring(0, 26)
+        : 'PROJETO EXECUTIVO - PLANTA BAIXA';
       ctx.fillText(
-        'PROJETO EXECUTIVO - PLANTA BAIXA',
+        companyHeader,
         tbLeft + (isHighResExport ? 16 : 8),
         tbTop + (isHighResExport ? 26 : isCompact ? 13 : 15)
       );
@@ -1126,8 +1207,22 @@ export function BlueprintCanvas({
         isHighResExport ? 30 : 14,
         isHighResExport ? 94 : 50
       );
+
+      if (results.isForaDaNorma) {
+        ctx.fillStyle = '#F59E0B';
+        ctx.font = isHighResExport
+          ? 'bold 14px system-ui, sans-serif'
+          : isCompact
+          ? 'bold 7.5px system-ui, sans-serif'
+          : 'bold 8.5px system-ui, sans-serif';
+        ctx.fillText(
+          `⚠️ DIMENSÕES SOB MEDIDA (Abaixo do padrão normativo ABNT NBR 16858-1 de 800x1200 mm)`,
+          isHighResExport ? 30 : 14,
+          isHighResExport ? 118 : 62
+        );
+      }
     },
-    [state, results]
+    [state, results, companySettings]
   );
 
   // On-screen redraw function with full resilience
@@ -1163,6 +1258,26 @@ export function BlueprintCanvas({
     }
   }, [renderBlueprintToContext, zoomLevel]);
 
+  // Carrega o logotipo como HTMLImageElement para desenho síncrono no Canvas
+  useEffect(() => {
+    if (companySettings.logoDataUrl) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        logoImageRef.current = img;
+        drawBlueprint();
+      };
+      img.onerror = () => {
+        logoImageRef.current = null;
+        drawBlueprint();
+      };
+      img.src = companySettings.logoDataUrl;
+    } else {
+      logoImageRef.current = null;
+      drawBlueprint();
+    }
+  }, [companySettings.logoDataUrl, drawBlueprint]);
+
   // Handle ResizeObserver & initial layout tick
   useEffect(() => {
     const container = containerRef.current;
@@ -1196,6 +1311,11 @@ export function BlueprintCanvas({
       observer.disconnect();
     };
   }, [drawBlueprint, activeTab]);
+
+  // Sempre redesenha imediatamente quando drawBlueprint for atualizado (mudança de dimensões/estado/resultados)
+  useEffect(() => {
+    drawBlueprint();
+  }, [drawBlueprint]);
 
   // Re-draw on window resize
   useEffect(() => {
@@ -1434,6 +1554,21 @@ export function BlueprintCanvas({
             </button>
           </div>
         </div>
+
+        {/* Alerta Normativo se a cabine estiver fora da norma (dimensões reduzidas sob medida) */}
+        {results.isForaDaNorma && (
+          <div className="bg-amber-950/80 border-b border-amber-600/50 px-3.5 py-1.5 flex items-center justify-between text-amber-200 text-xs shrink-0">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                <strong>Aviso Normativo ABNT NBR 16858-1:</strong> Cabine ({state.larguraCabine} × {state.profundidadeCabine} mm) com dimensões inferiores ao mínimo recomendado (800 × 1200 mm). Planta dimensionada sob medida para o poço informado.
+              </span>
+            </div>
+            <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-amber-900/60 text-amber-300 font-mono text-[10px] uppercase font-bold border border-amber-500/40 shrink-0 ml-2">
+              Sob Medida
+            </span>
+          </div>
+        )}
 
         {/* Interactive Blueprint Canvas */}
         <div className="relative flex-1 w-full h-full min-h-[440px] bg-[#081426] flex items-center justify-center overflow-hidden">

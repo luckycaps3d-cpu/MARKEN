@@ -22,6 +22,8 @@ import {
   ElevatorPreset,
   getMaiorAberturaValida,
   calculateShaftClearances,
+  ShaftConfigState,
+  INITIAL_SHAFT_STATE,
 } from '@/lib/elevator-calculator';
 import {
   Sliders,
@@ -45,6 +47,9 @@ interface ConfigPanelProps {
   onChange: (newState: ElevatorConfigState) => void;
   configMode?: 'cabine' | 'poco';
   onConfigModeChange?: (mode: 'cabine' | 'poco') => void;
+  onOpenSystemSettings?: () => void;
+  shaftConfig?: ShaftConfigState;
+  onShaftConfigChange?: (newConfig: ShaftConfigState) => void;
 }
 
 export function ConfigPanel({
@@ -52,6 +57,9 @@ export function ConfigPanel({
   onChange,
   configMode: controlledMode,
   onConfigModeChange,
+  onOpenSystemSettings,
+  shaftConfig,
+  onShaftConfigChange,
 }: ConfigPanelProps) {
   const [internalMode, setInternalMode] = React.useState<'cabine' | 'poco'>('cabine');
   const [showClearancesModal, setShowClearancesModal] = React.useState(false);
@@ -192,6 +200,7 @@ export function ConfigPanel({
           </button>
         </div>
         
+        {/* Botão de Folgas Técnicas Salvas */}
         <button
           onClick={() => setShowClearancesModal(true)}
           title={hasCustomClearances ? "Configuração de Folgas Técnicas (Personalizadas e Salvas)" : "Configurar Folgas Técnicas (Salvas no Programa)"}
@@ -205,15 +214,26 @@ export function ConfigPanel({
             />
           )}
         </button>
+
+        {/* Botão de Configurações do Sistema e Logotipo */}
+        {onOpenSystemSettings && (
+          <button
+            type="button"
+            onClick={onOpenSystemSettings}
+            title="Configurações do Sistema, Logotipo e Marca d'Água"
+            className="p-3 shrink-0 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 transition-colors rounded-xl flex items-center justify-center cursor-pointer group"
+          >
+            <Sliders className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* Renderização Condicional: Modo Poço (Inverso) ou Modo Cabine (Direto) */}
       {activeMode === 'poco' ? (
         <ShaftCalculator
-          currentState={state}
-          onApplyCabin={(newState) => {
-            onChange(newState);
-          }}
+          shaftConfig={shaftConfig ?? INITIAL_SHAFT_STATE}
+          onChange={onShaftConfigChange ?? (() => {})}
+          customClearances={state}
         />
       ) : (
         <>
