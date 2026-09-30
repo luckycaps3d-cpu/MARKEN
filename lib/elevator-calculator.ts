@@ -72,6 +72,7 @@ export interface ShaftConfigState {
   ladoArcada: LadoArcada;
   ladoPorta: LadoInstalacaoPorta;
   selectedCabinKey?: string | null;
+  aberturaPorta?: string;
 }
 
 export const INITIAL_SHAFT_STATE: ShaftConfigState = {
@@ -85,6 +86,7 @@ export const INITIAL_SHAFT_STATE: ShaftConfigState = {
   ladoArcada: 'Lateral',
   ladoPorta: 'Largura',
   selectedCabinKey: null,
+  aberturaPorta: '800',
 };
 
 export interface CalculateElevatorOptions {

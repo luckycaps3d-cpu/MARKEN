@@ -120,41 +120,41 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-sm">
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+      <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-slate-800">
         <div className="flex items-center gap-2">
           <div className="p-1.5 rounded-lg bg-emerald-950/70 border border-emerald-800/50 text-emerald-400">
             <Calculator className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-white">
-              Resultados do Dimensionamento
+            <h2 className="text-xs sm:text-sm font-semibold text-white">
+              {results.isCalculadoPorPoco ? 'Memorial de Cálculo & Folgas Técnicas' : 'Resultados do Dimensionamento'}
             </h2>
-            <p className="text-xs text-slate-400">
-              Capacidade, carga e medidas para a caixa de corrida
+            <p className="text-[11px] text-slate-400">
+              {results.isCalculadoPorPoco ? 'Detalhamento normativo e folgas estruturais da obra' : 'Capacidade, carga e medidas calculadas para a caixa de corrida'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             id="btn-generate-pdf-header"
             type="button"
             onClick={handleGeneratePdf}
             disabled={isGeneratingPdf}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/50 rounded-lg transition-all cursor-pointer shadow-sm disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/50 rounded-lg transition-all cursor-pointer shadow-sm disabled:opacity-50"
             title="Gerar e baixar relatório técnico em PDF (ABNT NBR 16858-1)"
           >
             {isGeneratingPdf ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Gerando PDF...</span>
+                <span className="hidden sm:inline">Gerando...</span>
               </>
             ) : (
               <>
                 <FileDown className="w-3.5 h-3.5" />
-                <span>Gerar PDF</span>
+                <span>PDF</span>
               </>
             )}
           </button>
@@ -163,12 +163,12 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
             id="btn-copy-report"
             type="button"
             onClick={handleCopyReport}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 rounded-lg transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 rounded-lg transition-colors cursor-pointer"
           >
             {copied ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-300">Copiado!</span>
+                <span className="text-emerald-300">Copiado</span>
               </>
             ) : (
               <>
@@ -180,161 +180,119 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
         </div>
       </div>
 
-      {/* Alerta Normativo se a cabine estiver fora da norma (dimensões reduzidas sob medida) */}
-      {results.isForaDaNorma && (
-        <div className="mb-4 bg-amber-950/50 border border-amber-500/60 rounded-xl p-3.5 flex items-start gap-3 text-amber-200">
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-xs">
-            <span className="font-bold text-amber-300 block uppercase tracking-wide">
-              Aviso Normativo ABNT NBR 16858-1 / NM 313
+      {/* Alerta Normativo no modo cabine (no modo poço já é exibido no card superior) */}
+      {!results.isCalculadoPorPoco && results.isForaDaNorma && (
+        <div className="mb-3 bg-amber-950/50 border border-amber-500/60 rounded-xl p-2.5 flex items-start gap-2.5 text-amber-200 text-xs">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold text-amber-300 block uppercase">
+              Aviso Normativo ABNT NBR 16858-1
             </span>
-            <span className="text-amber-200/90 mt-0.5 block leading-relaxed">
-              As dimensões da cabine ({state.larguraCabine} × {state.profundidadeCabine} mm) são inferiores ao padrão normativo mínimo recomendado (800 × 1200 mm para residencial / 1100 × 1400 mm para acessibilidade).
-            </span>
-            <span className="text-[11px] text-emerald-300 mt-1 block font-medium">
-              ✓ Dimensionamento sob medida aplicado com sucesso para o poço informado.
+            <span className="text-amber-200/90 leading-tight block">
+              Dimensões ({state.larguraCabine} × {state.profundidadeCabine} mm) inferiores ao padrão normativo mínimo (800 × 1200 mm). Projeto especial sob medida.
             </span>
           </div>
         </div>
       )}
 
-      {/* Primary Highlights: 4 Key Result Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        {/* Número de Passageiros (NBR 16858-1) */}
-        <div className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-950/40 to-slate-950/70 border border-emerald-500/30">
-          <div className="flex items-center justify-between text-xs text-emerald-300 font-medium mb-1">
-            <span className="flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-emerald-400" />
-              Número de Passageiros
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-200 font-mono">
-              NBR 16858-1
-            </span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl sm:text-3xl font-bold font-mono text-emerald-100 tracking-tight">
-              {results.numeroPassageiros}
-            </span>
-            <span className="text-sm text-emerald-400 font-medium">
-              {results.numeroPassageiros === 1 ? 'passageiro' : 'passageiros'}
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Base: {results.areaCabineM2.toFixed(2)} m² de cabine (Tabela 7 / 75 kg)
-          </p>
-        </div>
-
-        {/* Carga Útil Nominal (Q) */}
-        <div className="p-3.5 rounded-xl bg-gradient-to-br from-amber-950/40 to-slate-950/70 border border-amber-500/30">
-          <div className="flex items-center justify-between text-xs text-amber-300 font-medium mb-1">
-            <span className="flex items-center gap-1.5">
-              <Weight className="w-3.5 h-3.5 text-amber-400" />
-              Carga Útil Nominal (Q)
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-200 font-mono">
-              Tabela 6
-            </span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl sm:text-3xl font-bold font-mono text-amber-100 tracking-tight">
-              {results.cargaUtilKg}
-            </span>
-            <span className="text-sm text-amber-400 font-mono">kg</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Mínimo normativo: {results.cargaMinimaInterpoladaKg} kg (evita sobrecarga)
-          </p>
-        </div>
-
-        {/* Largura do Poço */}
-        <div className={`p-3.5 rounded-xl border ${
-          results.isCalculadoPorPoco
-            ? 'bg-gradient-to-br from-emerald-950/40 to-slate-950/70 border-emerald-500/40'
-            : 'bg-gradient-to-br from-cyan-950/40 to-slate-950/70 border-cyan-500/30'
-        }`}>
-          <div className="flex items-center justify-between text-xs text-cyan-300 font-medium mb-1">
-            <span className={results.isCalculadoPorPoco ? 'text-emerald-300' : 'text-cyan-300'}>
-              Largura do Poço (LP)
-            </span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-              results.isCalculadoPorPoco
-                ? 'bg-emerald-900/60 text-emerald-200'
-                : 'bg-cyan-900/60 text-cyan-200'
-            }`}>
-              {results.isCalculadoPorPoco ? 'Medida Informada' : 'Eixo X'}
-            </span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl sm:text-3xl font-bold font-mono text-cyan-100 tracking-tight">
-              {results.larguraPoco}
-            </span>
-            <span className="text-sm text-cyan-400 font-mono">mm</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {results.isCalculadoPorPoco ? (
-              <>
-                Cabine calculada: <strong className="text-slate-200 font-mono">{state.larguraCabine} mm</strong> | Sobra no poço: <strong className="text-emerald-400 font-mono">+{results.sobraLarguraPoco ?? 0} mm</strong>
-              </>
-            ) : (
-              <>
-                Cabine ({state.larguraCabine}) + Chassis ({results.espacoChassis}) + Folgas ({results.menorFolga}
-                {state.tipoEntrada === 'Adjacente' ? ' + 160' : ''})
-              </>
-            )}
-          </p>
-        </div>
-
-        {/* Profundidade do Poço */}
-        <div className={`p-3.5 rounded-xl border ${
-          results.isCalculadoPorPoco
-            ? 'bg-gradient-to-br from-emerald-950/40 to-slate-950/70 border-emerald-500/40'
-            : 'bg-gradient-to-br from-cyan-950/40 to-slate-950/70 border-cyan-500/30'
-        }`}>
-          <div className="flex items-center justify-between text-xs text-cyan-300 font-medium mb-1">
-            <span className={results.isCalculadoPorPoco ? 'text-emerald-300' : 'text-cyan-300'}>
-              Profundidade do Poço (PP)
-            </span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-              results.isCalculadoPorPoco
-                ? 'bg-emerald-900/60 text-emerald-200'
-                : 'bg-cyan-900/60 text-cyan-200'
-            }`}>
-              {results.isCalculadoPorPoco ? 'Medida Informada' : 'Eixo Y'}
-            </span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl sm:text-3xl font-bold font-mono text-cyan-100 tracking-tight">
-              {results.profundidadePoco}
-            </span>
-            <span className="text-sm text-cyan-400 font-mono">mm</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {results.isCalculadoPorPoco ? (
-              <>
-                Cabine calculada: <strong className="text-slate-200 font-mono">{state.profundidadeCabine} mm</strong> | Sobra no poço: <strong className="text-emerald-400 font-mono">+{results.sobraProfundidadePoco ?? 0} mm</strong>
-              </>
-            ) : (
-              <>
-                Cabine ({state.profundidadeCabine}) + Frontal ({results.folgaFrontal}) + Fundo (
-                {state.ladoArcada === 'Fundo' ? results.espacoChassis : 120}
-                {state.tipoEntrada === 'Oposta' ? ' + 160' : ''})
-              </>
-            )}
-          </p>
-        </div>
-      </div>
-
-      {/* Atalho para Dimensionamento Inverso por Poço */}
-      {onOpenShaftCalculator && (
-        <div className="mb-4 p-3 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-cyan-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs">
-            <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <div>
-              <span className="font-semibold text-slate-200 block">
-                Já tem as medidas do poço da obra?
+      {/* 4 Cards Principais de Resultado (exibidos apenas no modo por cabine para não duplicar dados do modo poço) */}
+      {!results.isCalculadoPorPoco && (
+        <div className="grid grid-cols-2 gap-2 mb-2.5">
+          {/* Número de Passageiros */}
+          <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30">
+            <div className="flex items-center justify-between text-[10px] text-emerald-300 font-medium mb-0.5">
+              <span className="flex items-center gap-1">
+                <Users className="w-3 h-3 text-emerald-400" />
+                Passageiros
               </span>
-              <span className="text-[11px] text-slate-400">
-                Calcule os tamanhos de cabine possíveis em múltiplos de 50 mm (sem medidas quebradas).
+              <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-900/60 text-emerald-200 font-mono">
+                NBR 16858-1
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg sm:text-xl font-bold font-mono text-emerald-100">
+                {results.numeroPassageiros}
+              </span>
+              <span className="text-[10px] text-emerald-400">pass.</span>
+            </div>
+            <p className="text-[9px] text-slate-400">
+              Área: {results.areaCabineM2.toFixed(2)} m²
+            </p>
+          </div>
+
+          {/* Carga Útil Nominal */}
+          <div className="p-2 rounded-lg bg-amber-950/40 border border-amber-500/30">
+            <div className="flex items-center justify-between text-[10px] text-amber-300 font-medium mb-0.5">
+              <span className="flex items-center gap-1">
+                <Weight className="w-3 h-3 text-amber-400" />
+                Carga Útil (Q)
+              </span>
+              <span className="text-[9px] px-1 py-0.2 rounded bg-amber-900/60 text-amber-200 font-mono">
+                Tabela 6
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg sm:text-xl font-bold font-mono text-amber-100">
+                {results.cargaUtilKg}
+              </span>
+              <span className="text-[10px] text-amber-400 font-mono">kg</span>
+            </div>
+            <p className="text-[9px] text-slate-400">
+              Mínimo: {results.cargaMinimaInterpoladaKg} kg
+            </p>
+          </div>
+
+          {/* Largura do Poço */}
+          <div className="p-2 rounded-lg bg-cyan-950/40 border border-cyan-500/30">
+            <div className="flex items-center justify-between text-[10px] text-cyan-300 font-medium mb-0.5">
+              <span>Largura Poço (LP)</span>
+              <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-900/60 text-cyan-200 font-mono">
+                Eixo X
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg sm:text-xl font-bold font-mono text-cyan-100">
+                {results.larguraPoco}
+              </span>
+              <span className="text-[10px] text-cyan-400 font-mono">mm</span>
+            </div>
+            <p className="text-[9px] text-slate-400 truncate">
+              Cabine ({state.larguraCabine}) + Chassis + Folgas
+            </p>
+          </div>
+
+          {/* Profundidade do Poço */}
+          <div className="p-2 rounded-lg bg-cyan-950/40 border border-cyan-500/30">
+            <div className="flex items-center justify-between text-[10px] text-cyan-300 font-medium mb-0.5">
+              <span>Profundidade (PP)</span>
+              <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-900/60 text-cyan-200 font-mono">
+                Eixo Y
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg sm:text-xl font-bold font-mono text-cyan-100">
+                {results.profundidadePoco}
+              </span>
+              <span className="text-[10px] text-cyan-400 font-mono">mm</span>
+            </div>
+            <p className="text-[9px] text-slate-400 truncate">
+              Cabine ({state.profundidadeCabine}) + Folgas
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Atalho para Dimensionamento Inverso por Poço (Apenas se não estiver no modo poço) */}
+      {onOpenShaftCalculator && !results.isCalculadoPorPoco && (
+        <div className="mb-2.5 p-2 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-cyan-950/40 border border-emerald-500/30 rounded-lg flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs">
+            <Building2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <div>
+              <span className="font-semibold text-slate-200 text-[11px] block">
+                Dimensionar pelo Poço Existente?
+              </span>
+              <span className="text-[10px] text-slate-400">
+                Calcule cabines em múltiplos de 50 mm.
               </span>
             </div>
           </div>
@@ -342,51 +300,51 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
             id="btn-open-shaft-calc"
             type="button"
             onClick={onOpenShaftCalculator}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer shrink-0 shadow-sm"
+            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] rounded transition-colors cursor-pointer shrink-0 shadow-sm"
           >
-            Calcular por Poço
+            Modo Poço
           </button>
         </div>
       )}
 
       {/* Technical Breakdown: Capacidade ABNT NBR 16858-1 */}
-      <div className="mb-3 bg-slate-950/60 border border-emerald-900/40 rounded-xl p-3 text-xs">
-        <div className="flex items-center gap-1.5 pb-2 mb-2 border-b border-slate-800/80 text-emerald-400 font-semibold">
+      <div className="mb-2 bg-slate-950/60 border border-emerald-900/40 rounded-xl p-2.5 text-xs">
+        <div className="flex items-center gap-1.5 pb-1.5 mb-1.5 border-b border-slate-800/80 text-emerald-400 font-semibold text-[11px]">
           <ShieldCheck className="w-3.5 h-3.5" />
           <span>Dimensionamento de Lotação (ABNT NBR 16858-1:2020)</span>
         </div>
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+        <div className="space-y-1 text-[11px]">
+          <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
             <span className="text-slate-400">Área Útil da Cabine</span>
             <span className="font-mono font-semibold text-slate-200">
               {results.areaCabineM2.toFixed(2)} m²
             </span>
           </div>
-          <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+          <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
             <span className="text-slate-400">Lotação de Passageiros (Tabela 7)</span>
             <span className="font-mono font-semibold text-emerald-400">
               {results.numeroPassageiros} pessoas
             </span>
           </div>
-          <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+          <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
             <span className="text-slate-400">Carga Útil Nominal Recomendada (Q)</span>
             <span className="font-mono font-semibold text-amber-300">
               {results.cargaUtilKg} kg
             </span>
           </div>
-          <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+          <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
             <span className="text-slate-400">Carga Mínima Exigida (Tabela 6)</span>
             <span className="font-mono text-slate-300">
               {results.cargaMinimaInterpoladaKg} kg
             </span>
           </div>
-          <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+          <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
             <span className="text-slate-400">Área Máxima Permitida (Tabela 6)</span>
             <span className="font-mono text-slate-300">
               {results.areaMaxPermitidaM2.toFixed(2)} m²
             </span>
           </div>
-          <div className="flex items-center justify-between py-1">
+          <div className="flex items-center justify-between py-0.5">
             <span className="text-slate-400">Massa Média por Passageiro</span>
             <span className="font-mono text-slate-300">
               75 kg / pessoa (Item 5.4.2.2)
@@ -396,42 +354,42 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
       </div>
 
       {/* Technical Breakdown: Arquitetura da Porta e Montantes da Cabine */}
-      <div className="mb-3 bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 text-xs">
-        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 font-semibold">
+      <div className="mb-2 bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5 text-xs">
+        <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800/80 font-semibold text-[11px]">
           <span className="text-cyan-400 flex items-center gap-1.5">
             <Ruler className="w-3.5 h-3.5" />
             Arquitetura de Porta e Montantes de Cabine
           </span>
           {results.isPortaMenorQueLado ? (
-            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono">
-              ✓ Porta Conforme
+            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono">
+              ✓ Conforme
             </span>
           ) : (
-            <span className="text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono">
+            <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono">
               ⚠️ Inconsistente
             </span>
           )}
         </div>
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+        <div className="space-y-1 text-[11px]">
+          <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
             <span className="text-slate-400">Face de Instalação da Porta</span>
             <span className="font-mono font-semibold text-slate-200">
               {results.nomeLadoPorta}
             </span>
           </div>
-          <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+          <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
             <span className="text-slate-400">Vão Livre de Abertura</span>
             <span className="font-mono font-semibold text-cyan-300">
               {state.aberturaPorta} mm
             </span>
           </div>
-          <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
-            <span className="text-slate-400">Montantes Frontais (Retornos de Cabine)</span>
+          <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
+            <span className="text-slate-400">Montantes Frontais (Retornos)</span>
             <span className="font-mono font-semibold text-emerald-400">
               2× {results.montanteFrontalMm} mm (Total: {results.diferencaPortaLadoMm} mm)
             </span>
           </div>
-          <div className="flex items-center justify-between py-1">
+          <div className="flex items-center justify-between py-0.5">
             <span className="text-slate-400">Regra Construtiva</span>
             <span className="text-slate-300">
               {results.isPortaMenorQueLado
@@ -443,37 +401,37 @@ Gerado via Configurador de Elevador Web (ABNT NBR 16858-1)
       </div>
 
       {/* Technical Breakdown: Folgas e Caixa de Corrida */}
-      <div className="space-y-2 bg-slate-950/50 border border-slate-800/80 rounded-xl p-3 text-xs">
+      <div className="space-y-1 bg-slate-950/50 border border-slate-800/80 rounded-xl p-2.5 text-[11px]">
         <div className="text-slate-300 font-semibold pb-1 border-b border-slate-800/60">
           Folgas e Componentes Estruturais
         </div>
-        <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+        <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
           <span className="text-slate-400">Folga Necessária (Porta)</span>
           <span className="font-mono font-semibold text-slate-200">
             {results.folgaPorta} mm
           </span>
         </div>
 
-        <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+        <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
           <span className="text-slate-400">Espaço Chassis (L / S)</span>
           <span className="font-mono font-semibold text-slate-200">
             {results.espacoChassis} mm
           </span>
         </div>
 
-        <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+        <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
           <span className="text-slate-400">Menor Folga de Segurança</span>
           <span className="font-mono font-semibold text-slate-200">
             {results.menorFolga} mm
           </span>
         </div>
 
-        <div className="flex items-center justify-between py-1 border-b border-slate-800/40">
+        <div className="flex items-center justify-between py-0.5 border-b border-slate-800/40">
           <span className="text-slate-400">Tipo de Suporte de Guia</span>
           <span className="font-medium text-cyan-300">{results.tipoSuporte}</span>
         </div>
 
-        <div className="flex items-center justify-between py-1">
+        <div className="flex items-center justify-between py-0.5">
           <span className="text-slate-400">Quantidade de Suportes por Andar</span>
           <span className="font-mono font-semibold text-emerald-400">
             {results.qtdSuporte} unidades
